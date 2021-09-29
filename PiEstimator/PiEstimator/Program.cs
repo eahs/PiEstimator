@@ -6,7 +6,7 @@ namespace PiEstimator
     {
         static void Main(string[] args)
         {
-            int n;
+            long n;
             
             Console.WriteLine("Pi Estimator");
             Console.WriteLine("================================================");
@@ -20,26 +20,26 @@ namespace PiEstimator
             Console.WriteLine($"Pi (estimate): {pi}, Pi (system): {Math.PI}, Difference: {diff}");
         }
 
-        static double EstimatePi(int n)
+        static double EstimatePi(long n)
         {
             Random rand = new Random(System.Environment.TickCount);
             double pi = 0.0;
-            
-            
+
+            // TODO: Calculate Pi
 
             return pi;
         }
 
-        static int GetNumber(string prompt)
+        static long GetNumber(string prompt)
         {
-            int output;
+            long output;
 
             while (true)
             {
                 Console.Write(prompt);
                 string input = Console.ReadLine();
 
-                if (Int32.TryParse(input, out output))
+                if (Int64.TryParse(input, out output))
                 {
                     return output;
                 }
