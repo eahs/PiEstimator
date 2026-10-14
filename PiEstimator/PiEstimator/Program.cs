@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
-using System.Text;
+using System.Globalization;
+using Spectre.Console;
 
 namespace PiEstimator;
 
@@ -21,33 +22,43 @@ class Program
     const string PiDigits = "3.14159265358979323846264338327950288";
 
     /// <summary>
-    /// Inner width (in characters) of the boxes drawn on screen.
-    /// </summary>
-    const int BoxWidth = 50;
-
-    /// <summary>
     /// Entry point of the application. Prompts the user for the number of
     /// iterations, estimates Pi, and prints a report comparing the estimate
     /// to the true value of Pi.
     /// </summary>
-    /// <param name="args">Command-line arguments (not used).</param>
+    /// <param name="args">
+    /// Command-line arguments. If the first argument is a positive whole number it is
+    /// used as the number of iterations; otherwise the user is prompted for one.
+    /// </param>
     static void Main(string[] args)
     {
-        long n;
-
-        Console.OutputEncoding = Encoding.UTF8;
-
         PrintBanner();
 
-        n = GetNumber("  Enter number of iterations (n): ");
+        if (args.Length == 0 || !long.TryParse(args[0], out long n) || n <= 0)
+        {
+            n = AnsiConsole.Prompt(
+            new TextPrompt<long>("[yellow]Enter number of iterations (n):[/]")
+                .ValidationErrorMessage("[red]Please enter a whole number.[/]")
+                .Validate(value => value > 0
+                    ? ValidationResult.Success()
+                    : ValidationResult.Error("[red]The number must be greater than 0.[/]")));
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[yellow]Number of iterations (n):[/] {n:N0}");
+        }
 
-        Console.WriteLine();
-        WriteColored("  Throwing random numbers at the problem...", ConsoleColor.DarkGray);
-        Console.WriteLine();
+        decimal pi = 0m;
+        Stopwatch timer = new Stopwatch();
 
-        Stopwatch timer = Stopwatch.StartNew();
-        decimal pi = EstimatePi(n);
-        timer.Stop();
+        AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .Start("Throwing random numbers at the problem...", _ =>
+            {
+                timer.Start();
+                pi = EstimatePi(n);
+                timer.Stop();
+            });
 
         PrintResults(n, pi, timer.Elapsed);
     }
@@ -71,48 +82,17 @@ class Program
     }
 
     /// <summary>
-    /// Repeatedly prompts the user until they enter a valid positive whole number.
-    /// </summary>
-    /// <param name="prompt">The message displayed to the user before each input attempt.</param>
-    /// <returns>The number entered by the user, parsed as a <see cref="long"/>.</returns>
-    static long GetNumber(string prompt)
-    {
-        long output;
-
-        while (true)
-        {
-            WriteColored(prompt, ConsoleColor.Yellow);
-            string input = Console.ReadLine();
-
-            if (Int64.TryParse(input?.Replace(",", ""), out output) && output > 0)
-            {
-                return output;
-            }
-
-            WriteColored("  Please enter a whole number greater than 0.", ConsoleColor.Red);
-            Console.WriteLine();
-        }
-    }
-
-    /// <summary>
     /// Prints the title banner at the top of the program.
     /// </summary>
     static void PrintBanner()
     {
-        Console.WriteLine();
-        WriteColored("  ╔" + new string('═', BoxWidth) + "╗", ConsoleColor.Cyan);
-        Console.WriteLine();
-        WriteColored("  ║" + Center("π   E S T I M A T O R", BoxWidth) + "║", ConsoleColor.Cyan);
-        Console.WriteLine();
-        WriteColored("  ║" + Center("3.14159265358979323846264338327950288...", BoxWidth) + "║", ConsoleColor.DarkCyan);
-        Console.WriteLine();
-        WriteColored("  ╚" + new string('═', BoxWidth) + "╝", ConsoleColor.Cyan);
-        Console.WriteLine();
-        Console.WriteLine();
+        AnsiConsole.Write(new FigletText("Pi Estimator").Centered().Color(Color.Cyan1));
+        AnsiConsole.Write(new Rule($"[darkcyan]{PiDigits}...[/]").RuleStyle("cyan"));
+        AnsiConsole.WriteLine();
     }
 
     /// <summary>
-    /// Prints the results box, the digit-by-digit comparison, an accuracy meter,
+    /// Prints the results table, the digit-by-digit comparison, an accuracy meter,
     /// and a rating message for the estimate.
     /// </summary>
     /// <param name="n">The number of iterations used for the estimate.</param>
@@ -122,135 +102,113 @@ class Program
     {
         decimal diff = Decimal.Abs(pi - ActualPi);
         decimal percentError = diff / ActualPi * 100m;
-        string estimateText = Math.Round(pi, 15).ToString();
+        string estimateText = Math.Round(pi, 15).ToString(CultureInfo.InvariantCulture);
         int correctDigits = CountCorrectDigits(estimateText);
 
-        Console.WriteLine();
-        WriteColored("  ┌─ Results " + new string('─', BoxWidth - 10) + "┐", ConsoleColor.Cyan);
-        Console.WriteLine();
-        PrintRow("Iterations", n.ToString("N0"), ConsoleColor.White);
-        PrintRow("Estimate", estimateText, ConsoleColor.Yellow);
-        PrintRow("Actual π", Math.Round(ActualPi, 15).ToString(), ConsoleColor.Green);
-        PrintRow("Difference", Math.Round(diff, 15).ToString(), ConsoleColor.Magenta);
-        PrintRow("Error", $"{percentError:0.######} %", ConsoleColor.Magenta);
-        PrintRow("Time", FormatTime(elapsed), ConsoleColor.White);
-        WriteColored("  └" + new string('─', BoxWidth) + "┘", ConsoleColor.Cyan);
-        Console.WriteLine();
-        Console.WriteLine();
+        Table table = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(Color.Cyan1)
+            .Title("[bold cyan]Results[/]")
+            .AddColumn("[grey]Measure[/]")
+            .AddColumn("[grey]Value[/]")
+            .AddRow("Iterations", $"[white]{n:N0}[/]")
+            .AddRow("Estimate", $"[yellow]{estimateText}[/]")
+            .AddRow("Actual π", $"[green]{Math.Round(ActualPi, 15).ToString(CultureInfo.InvariantCulture)}[/]")
+            .AddRow("Difference", $"[magenta]{Math.Round(diff, 15).ToString(CultureInfo.InvariantCulture)}[/]")
+            .AddRow("Error", $"[magenta]{percentError.ToString("0.######", CultureInfo.InvariantCulture)} %[/]")
+            .AddRow("Time", $"[white]{FormatTime(elapsed)}[/]");
 
-        PrintDigitComparison(estimateText, correctDigits);
-        PrintAccuracyMeter(correctDigits);
-        PrintRating(pi, correctDigits);
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        Grid grid = new Grid()
+            .AddColumn(new GridColumn().PadRight(2))
+            .AddColumn()
+            .AddRow("[grey]Your digits:[/]", DigitComparisonMarkup(estimateText, correctDigits))
+            .AddRow("[grey]Real digits:[/]", $"[darkgreen]{PiDigits.Substring(0, Math.Max(estimateText.Length, 2))}[/]")
+            .AddEmptyRow()
+            .AddRow("[grey]Accuracy:[/]", AccuracyMeterMarkup(correctDigits))
+            .AddRow("[grey]Rating:[/]", RatingMarkup(pi, correctDigits));
+
+        AnsiConsole.Write(grid);
+        AnsiConsole.WriteLine();
     }
 
     /// <summary>
-    /// Prints one labeled row inside the results box.
-    /// </summary>
-    /// <param name="label">The name of the value shown on the left.</param>
-    /// <param name="value">The value shown on the right.</param>
-    /// <param name="valueColor">The color used to draw the value.</param>
-    static void PrintRow(string label, string value, ConsoleColor valueColor)
-    {
-        string labelText = " " + label.PadRight(14);
-        string valueText = value.PadRight(BoxWidth - labelText.Length);
-
-        WriteColored("  │", ConsoleColor.Cyan);
-        WriteColored(labelText, ConsoleColor.Gray);
-        WriteColored(valueText, valueColor);
-        WriteColored("│", ConsoleColor.Cyan);
-        Console.WriteLine();
-    }
-
-    /// <summary>
-    /// Prints the estimate with correct digits in green, the first wrong digit
-    /// in red, and the remaining digits dimmed, with the real digits of Pi underneath.
+    /// Builds markup showing the estimate with correct digits in green, the first
+    /// wrong digit in red, and the remaining digits dimmed.
     /// </summary>
     /// <param name="estimateText">The estimate formatted as text.</param>
     /// <param name="correctDigits">How many leading digits of the estimate are correct.</param>
-    static void PrintDigitComparison(string estimateText, int correctDigits)
+    /// <returns>Spectre.Console markup for the colored digits.</returns>
+    static string DigitComparisonMarkup(string estimateText, int correctDigits)
     {
-        WriteColored("  Your digits:  ", ConsoleColor.Gray);
-
+        // Find where the correct part of the text ends (correct digits plus any decimal point).
+        int correctLength = 0;
         int digitsSeen = 0;
-        bool mismatchShown = false;
 
-        foreach (char c in estimateText)
+        while (correctLength < estimateText.Length && digitsSeen < correctDigits)
         {
-            if (c == '.')
+            if (char.IsDigit(estimateText[correctLength]))
             {
-                WriteColored(".", digitsSeen <= correctDigits ? ConsoleColor.Green : ConsoleColor.DarkGray);
-                continue;
+                digitsSeen++;
             }
 
-            digitsSeen++;
-
-            if (digitsSeen <= correctDigits)
-            {
-                WriteColored(c.ToString(), ConsoleColor.Green);
-            }
-            else if (!mismatchShown)
-            {
-                WriteColored(c.ToString(), ConsoleColor.Red);
-                mismatchShown = true;
-            }
-            else
-            {
-                WriteColored(c.ToString(), ConsoleColor.DarkGray);
-            }
+            correctLength++;
         }
 
-        Console.WriteLine();
-        WriteColored("  Real digits:  ", ConsoleColor.Gray);
-        WriteColored(PiDigits.Substring(0, Math.Max(estimateText.Length, 2)), ConsoleColor.DarkGreen);
-        Console.WriteLine();
-        Console.WriteLine();
+        if (correctLength < estimateText.Length && estimateText[correctLength] == '.')
+        {
+            correctLength++;
+        }
+
+        string correct = estimateText.Substring(0, correctLength);
+        string wrong = correctLength < estimateText.Length ? estimateText.Substring(correctLength, 1) : "";
+        string rest = correctLength + 1 < estimateText.Length ? estimateText.Substring(correctLength + 1) : "";
+
+        return $"[green]{correct}[/][red]{wrong}[/][grey]{rest}[/]";
     }
 
     /// <summary>
-    /// Prints a bar showing how many digits of the estimate are correct.
+    /// Builds markup for a bar showing how many digits of the estimate are correct.
     /// </summary>
     /// <param name="correctDigits">How many leading digits of the estimate are correct.</param>
-    static void PrintAccuracyMeter(int correctDigits)
+    /// <returns>Spectre.Console markup for the accuracy bar.</returns>
+    static string AccuracyMeterMarkup(int correctDigits)
     {
         const int meterSize = 10;
         int filled = Math.Min(correctDigits, meterSize);
 
-        ConsoleColor barColor = correctDigits switch
+        string barColor = correctDigits switch
         {
-            >= 5 => ConsoleColor.Green,
-            >= 3 => ConsoleColor.Yellow,
-            _ => ConsoleColor.Red
+            >= 5 => "green",
+            >= 3 => "yellow",
+            _ => "red"
         };
 
-        WriteColored("  Accuracy:     ", ConsoleColor.Gray);
-        WriteColored(new string('█', filled), barColor);
-        WriteColored(new string('░', meterSize - filled), ConsoleColor.DarkGray);
-        WriteColored($"  {correctDigits} correct digit{(correctDigits == 1 ? "" : "s")}", ConsoleColor.White);
-        Console.WriteLine();
+        return $"[{barColor}]{new string('█', filled)}[/][grey]{new string('░', meterSize - filled)}[/]" +
+               $"  [white]{correctDigits} correct digit{(correctDigits == 1 ? "" : "s")}[/]";
     }
 
     /// <summary>
-    /// Prints a short message rating how good the estimate is.
+    /// Builds markup for a short message rating how good the estimate is.
     /// </summary>
     /// <param name="pi">The estimated value of Pi.</param>
     /// <param name="correctDigits">How many leading digits of the estimate are correct.</param>
-    static void PrintRating(decimal pi, int correctDigits)
+    /// <returns>Spectre.Console markup for the rating message.</returns>
+    static string RatingMarkup(decimal pi, int correctDigits)
     {
-        (string message, ConsoleColor color) = (pi, correctDigits) switch
+        return (pi, correctDigits) switch
         {
-            (0m, _) => ("EstimatePi returned 0 -- time to write some code!", ConsoleColor.Red),
-            (_, 0) => ("Not quite... check your math.", ConsoleColor.Red),
-            (_, 1) => ("You got the 3! Getting warmer.", ConsoleColor.Yellow),
-            (_, 2) => ("3.1 -- good start. Try more iterations?", ConsoleColor.Yellow),
-            (_, 3) => ("3.14 -- nice work!", ConsoleColor.Green),
-            (_, 4) => ("Excellent! Archimedes would be proud.", ConsoleColor.Green),
-            _ => ("Incredible! Are you sure you didn't cheat?", ConsoleColor.Cyan)
+            (0m, _) => "[red]EstimatePi returned 0 -- time to write some code![/]",
+            (_, 0) => "[red]Not quite... check your math.[/]",
+            (_, 1) => "[yellow]You got the 3! Getting warmer.[/]",
+            (_, 2) => "[yellow]3.1 -- good start. Try more iterations?[/]",
+            (_, 3) => "[green]3.14 -- nice work![/]",
+            (_, 4) => "[green]Excellent! Archimedes would be proud.[/]",
+            _ => "[cyan]Incredible! Are you sure you didn't cheat?[/]"
         };
-
-        WriteColored("  Rating:       ", ConsoleColor.Gray);
-        WriteColored(message, color);
-        Console.WriteLine();
     }
 
     /// <summary>
@@ -291,30 +249,5 @@ class Program
         }
 
         return $"{elapsed.TotalMilliseconds:0.###} ms";
-    }
-
-    /// <summary>
-    /// Centers text within a field of the given width by padding it with spaces.
-    /// </summary>
-    /// <param name="text">The text to center.</param>
-    /// <param name="width">The total width of the field.</param>
-    /// <returns>The padded text.</returns>
-    static string Center(string text, int width)
-    {
-        int left = (width - text.Length) / 2;
-        return text.PadLeft(left + text.Length).PadRight(width);
-    }
-
-    /// <summary>
-    /// Writes text in the given color, then restores the previous console color.
-    /// </summary>
-    /// <param name="text">The text to write.</param>
-    /// <param name="color">The color to write the text in.</param>
-    static void WriteColored(string text, ConsoleColor color)
-    {
-        ConsoleColor previous = Console.ForegroundColor;
-        Console.ForegroundColor = color;
-        Console.Write(text);
-        Console.ForegroundColor = previous;
     }
 }
